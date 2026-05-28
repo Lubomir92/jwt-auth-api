@@ -1,131 +1,75 @@
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-
-from jose import JWTError, jwt
+from datetime import datetime, timedelta
+from jose import jwt
 from passlib.context import CryptContext
 
-from dotenv import load_dotenv
-import os
-
-import models, schemas
+import models
+import schemas
 from database import get_db
 
-# načítanie .env
-load_dotenv()
+router = APIRouter()
 
-SECRET_KEY = os.getenv("SECRET_KEY")
-
+# =========================
+# CONFIG
+# =========================
+SECRET_KEY = "supersecret123"
 ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
-router = APIRouter(
-    tags=["Authentication"]
-)
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-pwd_context = CryptContext(
-    schemes=["bcrypt"],
-    deprecated="auto"
-)
-
-oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl="login"
-)
 
 # =========================
-# HASH PASSWORD
+# PASSWORD
 # =========================
-
 def hash_password(password: str):
     return pwd_context.hash(password)
 
-# =========================
-# VERIFY PASSWORD
-# =========================
 
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(
-        plain_password,
-        hashed_password
-    )
+def verify_password(plain, hashed):
+    return pwd_context.verify(plain, hashed)
+
 
 # =========================
-# CREATE TOKEN
+# TOKEN
 # =========================
-
 def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-    return jwt.encode(
-        data,
-        SECRET_KEY,
-        algorithm=ALGORITHM
-    )
-
-# =========================
-# GET CURRENT USER
-# =========================
-
-def get_current_user(token: str = Depends(oauth2_scheme)):
-
-    credentials_exception = HTTPException(
-        status_code=401,
-        detail="Could not validate credentials"
-    )
-
-    try:
-        payload = jwt.decode(
-            token,
-            SECRET_KEY,
-            algorithms=[ALGORITHM]
-        )
-
-        email = payload.get("sub")
-
-        if email is None:
-            raise credentials_exception
-
-        return email
-
-    except JWTError:
-        raise credentials_exception
 
 # =========================
 # REGISTER
 # =========================
-
 @router.post("/register")
-def register(
-    user: schemas.UserCreate,
-    db: Session = Depends(get_db)
-):
+def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
-    existing_user = db.query(models.User).filter(
+    existing = db.query(models.User).filter(
         models.User.email == user.email
     ).first()
 
-    if existing_user:
-        raise HTTPException(
-            status_code=400,
-            detail="Email already registered"
-        )
-
-    hashed_password = hash_password(user.password)
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
 
     new_user = models.User(
         email=user.email,
-        password=hashed_password
+        password=hash_password(user.password)
     )
 
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
 
-    return {"message": "User created successfully"}
+    return {"message": "User created"}
+
 
 # =========================
 # LOGIN
 # =========================
-
 @router.post("/login")
 def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
@@ -137,25 +81,14 @@ def login(
     ).first()
 
     if not user:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid email or password"
-        )
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    if not verify_password(
-        form_data.password,
-        user.password
-    ):
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid email or password"
-        )
+    if not verify_password(form_data.password, user.password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    access_token = create_access_token(
-        data={"sub": user.email}
-    )
+    token = create_access_token({"sub": user.email})
 
     return {
-        "access_token": access_token,
+        "access_token": token,
         "token_type": "bearer"
     }
