@@ -1,103 +1,23 @@
-from fastapi import FastAPI, Depends, HTTPException
-from sqlalchemy.orm import Session
+from fastapi import FastAPI
 
 import models
-import schemas
-import auth
+from database import engine
+from auth import router as auth_router
+from routers import expenses
 
-from database import engine, SessionLocal
-
-from fastapi.middleware.cors import CORSMiddleware
-
+# vytvorenie tabuliek
 models.Base.metadata.create_all(bind=engine)
 
+# FastAPI app
 app = FastAPI()
 
-# =========================
-# DATABASE SESSION
-# =========================
-
-def get_db():
-    db = SessionLocal()
-
-    try:
-        yield db
-
-    finally:
-        db.close()
-
-# =========================
-# ROUTES
-# =========================
-
+# root endpoint
 @app.get("/")
-def home():
+def root():
     return {"message": "JWT Auth API running"}
 
-# -------------------------
-# REGISTER
-# -------------------------
+# auth routes
+app.include_router(auth_router)
 
-@app.post("/register")
-def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
-
-    hashed = auth.hash_password(user.password)
-
-    new_user = models.User(
-        email=user.email,
-        hashed_password=hashed
-    )
-
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-
-    return {"message": "user created"}
-
-# -------------------------
-# LOGIN
-# -------------------------
-
-@app.post("/login")
-def login(user: schemas.UserCreate, db: Session = Depends(get_db)):
-
-    db_user = db.query(models.User).filter(
-        models.User.email == user.email
-    ).first()
-
-    if not db_user:
-        raise HTTPException(status_code=400, detail="User not found")
-
-    if not auth.verify_password(user.password, db_user.hashed_password):
-        raise HTTPException(status_code=400, detail="Wrong password")
-
-    token = auth.create_access_token({"sub": db_user.email})
-
-    return {
-        "access_token": token,
-        "token_type": "bearer"
-    }
-
-# -------------------------
-# PROTECTED ROUTE
-# -------------------------
-
-@app.get("/protected")
-def protected_route(
-    current_user: str = Depends(auth.get_current_user)
-):
-
-    return {
-        "message": "You are authenticated",
-        "user": current_user
-    }
-
-# CORS
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# expense routes
+app.include_router(expenses.router)

@@ -12,3 +12,18 @@ engine = create_engine(
 SessionLocal = sessionmaker(bind=engine)
 
 Base = declarative_base()
+
+from sqlalchemy.orm import sessionmaker
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# =========================
+# DB DEPENDENCY
+# =========================
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
