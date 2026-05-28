@@ -1,45 +1,28 @@
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
-from jose import jwt
-from passlib.context import CryptContext
-
+from database import get_db
 import models
 import schemas
-from database import get_db
+
+from passlib.context import CryptContext
+from fastapi.security import OAuth2PasswordRequestForm
+
+print("AUTH LOADED:", __file__)
 
 router = APIRouter()
 
 # =========================
-# CONFIG
+# PASSWORD HASHING
 # =========================
-SECRET_KEY = "supersecret123"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
-
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
-# =========================
-# PASSWORD
-# =========================
 def hash_password(password: str):
     return pwd_context.hash(password)
 
 
-def verify_password(plain, hashed):
-    return pwd_context.verify(plain, hashed)
-
-
-# =========================
-# TOKEN
-# =========================
-def create_access_token(data: dict):
-    to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
 
 
 # =========================
@@ -48,11 +31,11 @@ def create_access_token(data: dict):
 @router.post("/register")
 def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
-    existing = db.query(models.User).filter(
+    existing_user = db.query(models.User).filter(
         models.User.email == user.email
     ).first()
 
-    if existing:
+    if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
 
     new_user = models.User(
@@ -64,7 +47,7 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_user)
 
-    return {"message": "User created"}
+    return {"message": "User created successfully"}
 
 
 # =========================
@@ -86,9 +69,6 @@ def login(
     if not verify_password(form_data.password, user.password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    token = create_access_token({"sub": user.email})
-
     return {
-        "access_token": token,
-        "token_type": "bearer"
+        "message": "Login successful"
     }
