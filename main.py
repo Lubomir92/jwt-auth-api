@@ -14,3 +14,5 @@ app.include_router(auth_router)
 @app.get("/")
 def root():
     return {"message": "JWT Auth API running"}
+
+print("NEW VERSION DEPLOYED")

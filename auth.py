@@ -1,21 +1,33 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from sqlalchemy.orm import Session
-from database import get_db
+
+from datetime import datetime, timedelta
+from jose import jwt
+
 import models
 import schemas
+from database import get_db
 
 from passlib.context import CryptContext
-from fastapi.security import OAuth2PasswordRequestForm
 
-print("AUTH LOADED:", __file__)
+# =========================
+# CONFIG
+# =========================
 
 router = APIRouter()
 
-# =========================
-# PASSWORD HASHING
-# =========================
+SECRET_KEY = "supersecretkey123"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# =========================
+# PASSWORD HELPERS
+# =========================
 
 def hash_password(password: str):
     return pwd_context.hash(password)
@@ -24,10 +36,22 @@ def hash_password(password: str):
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
+# =========================
+# JWT TOKEN
+# =========================
+
+def create_access_token(data: dict):
+    to_encode = data.copy()
+
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 # =========================
 # REGISTER
 # =========================
+
 @router.post("/register")
 def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
@@ -49,10 +73,10 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
     return {"message": "User created successfully"}
 
+# =========================
+# LOGIN (JWT)
+# =========================
 
-# =========================
-# LOGIN
-# =========================
 @router.post("/login")
 def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
@@ -69,6 +93,33 @@ def login(
     if not verify_password(form_data.password, user.password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
+    access_token = create_access_token(
+        data={"sub": user.email}
+    )
+
     return {
-        "message": "Login successful"
+        "access_token": access_token,
+        "token_type": "bearer"
     }
+
+# =========================
+# PROTECTED ROUTE
+# =========================
+
+@router.get("/me")
+def get_me(token: str = Depends(oauth2_scheme)):
+
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email = payload.get("sub")
+
+        if email is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        return {"email": email}
+
+    except jwt.JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    
+print("JWT VERSION ACTIVE")
+print(" AUTH JWT VERSION LOADED")
