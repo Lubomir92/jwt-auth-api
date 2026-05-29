@@ -1,8 +1,6 @@
 from database import Base
 from sqlalchemy import Column, Integer, String
 
-print("MODELS LOADED:", __file__)
-
 
 class User(Base):
     __tablename__ = "users"

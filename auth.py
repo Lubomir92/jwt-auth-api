@@ -1,66 +1,45 @@
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-
-from datetime import datetime, timedelta
-from jose import jwt
-
+from database import get_db
 import models
 import schemas
-from database import get_db
-
 from passlib.context import CryptContext
-
-# =========================
-# CONFIG
-# =========================
+from jose import jwt, JWTError
 
 router = APIRouter()
 
-SECRET_KEY = "supersecretkey123"
+# =====================
+# JWT SETUP
+# =====================
+SECRET_KEY = "secret123"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# =========================
-# PASSWORD HELPERS
-# =========================
 
+# =====================
+# HASH
+# =====================
 def hash_password(password: str):
     return pwd_context.hash(password)
 
 
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+def verify_password(plain, hashed):
+    return pwd_context.verify(plain, hashed)
 
-# =========================
-# JWT TOKEN
-# =========================
 
-def create_access_token(data: dict):
-    to_encode = data.copy()
-
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-
-# =========================
+# =====================
 # REGISTER
-# =========================
-
+# =====================
 @router.post("/register")
 def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
-    existing_user = db.query(models.User).filter(
-        models.User.email == user.email
-    ).first()
-
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Email already registered")
+    db_user = db.query(models.User).filter(models.User.email == user.email).first()
+    if db_user:
+        raise HTTPException(status_code=400, detail="User already exists")
 
     new_user = models.User(
         email=user.email,
@@ -73,41 +52,32 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
     return {"message": "User created successfully"}
 
-# =========================
-# LOGIN (JWT)
-# =========================
 
+# =====================
+# LOGIN
+# =====================
 @router.post("/login")
-def login(
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db)
-):
+def login(form_data: OAuth2PasswordRequestForm = Depends(),
+          db: Session = Depends(get_db)):
 
-    user = db.query(models.User).filter(
-        models.User.email == form_data.username
-    ).first()
+    user = db.query(models.User).filter(models.User.email == form_data.username).first()
 
-    if not user:
+    if not user or not verify_password(form_data.password, user.password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    if not verify_password(form_data.password, user.password):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    access_token = create_access_token(
-        data={"sub": user.email}
-    )
+    token = jwt.encode({"sub": user.email}, SECRET_KEY, algorithm=ALGORITHM)
 
     return {
-        "access_token": access_token,
+        "access_token": token,
         "token_type": "bearer"
     }
 
-# =========================
-# PROTECTED ROUTE
-# =========================
 
+# =====================
+# ME (protected)
+# =====================
 @router.get("/me")
-def get_me(token: str = Depends(oauth2_scheme)):
+def me(token: str = Depends(oauth2_scheme)):
 
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -118,8 +88,5 @@ def get_me(token: str = Depends(oauth2_scheme)):
 
         return {"email": email}
 
-    except jwt.JWTError:
+    except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
-    
-print("JWT VERSION ACTIVE")
-print(" AUTH JWT VERSION LOADED")
