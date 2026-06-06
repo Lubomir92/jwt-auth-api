@@ -16,7 +16,6 @@ ACCESS_EXPIRE_MINUTES = 60
 
 pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# 🔥 ONLY THIS (žiadne OAuth2)
 bearer = HTTPBearer()
 
 
