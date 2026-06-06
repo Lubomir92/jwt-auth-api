@@ -1,137 +1,93 @@
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from database import get_db
-import models
-import schemas
+import models, schemas
 
 from passlib.context import CryptContext
 from jose import jwt, JWTError
+from datetime import datetime, timedelta
+from fastapi.security import HTTPBearer
 
 router = APIRouter()
 
-# =========================
-# CONFIG
-# =========================
 SECRET_KEY = "secret123"
 ALGORITHM = "HS256"
+ACCESS_EXPIRE_MINUTES = 60
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# 🔥 ONLY THIS (žiadne OAuth2)
+bearer = HTTPBearer()
 
 
-# =========================
+# -------------------
 # PASSWORD
-# =========================
-def hash_password(password: str):
-    return pwd_context.hash(password)
+# -------------------
+def hash_password(p): return pwd.hash(p)
+def verify_password(p, h): return pwd.verify(p, h)
 
 
-def verify_password(plain, hashed):
-    return pwd_context.verify(plain, hashed)
+# -------------------
+# TOKEN
+# -------------------
+def create_token(data: dict):
+    payload = data.copy()
+    payload.update({
+        "exp": datetime.utcnow() + timedelta(minutes=ACCESS_EXPIRE_MINUTES)
+    })
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def create_token(email: str):
-    return jwt.encode({"sub": email}, SECRET_KEY, algorithm=ALGORITHM)
-
-
-def get_current_user(token: str = Depends(oauth2_scheme)):
+# -------------------
+# AUTH
+# -------------------
+def get_current_user(credentials=Depends(bearer)):
+    token = credentials.credentials
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email = payload.get("sub")
-
-        if email is None:
-            raise HTTPException(status_code=401, detail="Invalid token")
-
+        if not email:
+            raise HTTPException(401, "Invalid token")
         return email
-
     except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(401, "Invalid token")
 
 
-# =========================
+# -------------------
 # REGISTER
-# =========================
+# -------------------
 @router.post("/register")
 def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    if db.query(models.User).filter(models.User.email == user.email).first():
+        raise HTTPException(400, "User exists")
 
-    existing = db.query(models.User).filter(models.User.email == user.email).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="User already exists")
-
-    new_user = models.User(
+    db.add(models.User(
         email=user.email,
         password=hash_password(user.password)
-    )
-
-    db.add(new_user)
+    ))
     db.commit()
-    db.refresh(new_user)
 
-    return {"message": "User created"}
+    return {"message": "ok"}
 
 
-# =========================
-# LOGIN
-# =========================
+# -------------------
+# LOGIN (NO OAuth FORM)
+# -------------------
 @router.post("/login")
-def login(form_data: OAuth2PasswordRequestForm = Depends(),
-          db: Session = Depends(get_db)):
+def login(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    db_user = db.query(models.User).filter(models.User.email == user.email).first()
 
-    user = db.query(models.User).filter(models.User.email == form_data.username).first()
+    if not db_user or not verify_password(user.password, db_user.password):
+        raise HTTPException(401, "Invalid credentials")
 
-    if not user or not verify_password(form_data.password, user.password):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+    token = create_token({"sub": db_user.email})
 
-    token = create_token(user.email)
-
-    return {
-        "access_token": token,
-        "token_type": "bearer"
-    }
+    return {"access_token": token, "token_type": "bearer"}
 
 
-# =========================
-# ME
-# =========================
+# -------------------
+# TEST
+# -------------------
 @router.get("/me")
-def me(user_email: str = Depends(get_current_user)):
-    return {"email": user_email}
-
-
-# =========================
-# EXPENSES
-# =========================
-@router.post("/expenses")
-def create_expense(
-    expense: schemas.ExpenseCreate,
-    db: Session = Depends(get_db),
-    user_email: str = Depends(get_current_user)
-):
-
-    user = db.query(models.User).filter(models.User.email == user_email).first()
-
-    new_expense = models.Expense(
-        title=expense.title,
-        amount=expense.amount,
-        category=expense.category,
-        user_id=user.id
-    )
-
-    db.add(new_expense)
-    db.commit()
-    db.refresh(new_expense)
-
-    return new_expense
-
-
-@router.get("/expenses")
-def get_expenses(
-    db: Session = Depends(get_db),
-    user_email: str = Depends(get_current_user)
-):
-
-    user = db.query(models.User).filter(models.User.email == user_email).first()
-
-    return db.query(models.Expense).filter(models.Expense.user_id == user.id).all()
+def me(user=Depends(get_current_user)):
+    return {"email": user}
