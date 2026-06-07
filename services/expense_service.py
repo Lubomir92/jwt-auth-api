@@ -1,17 +1,24 @@
-from sqlalchemy.orm import Session
 import models
+from sqlalchemy.orm import Session
 
 
-# =========================
-# CREATE EXPENSE
-# =========================
+def get_user_expenses(db: Session, user_id: int):
+    """
+    Vráti všetky expenses konkrétneho používateľa.
+    """
+    return db.query(models.Expense).filter_by(user_id=user_id).all()
 
-def create_expense(db: Session, user, expense):
+
+def create_expense(db: Session, user_id: int, expense):
+    """
+    Vytvorí nový expense pre používateľa.
+    """
+
     new_expense = models.Expense(
         title=expense.title,
         amount=expense.amount,
         category=expense.category,
-        user_id=user.id
+        user_id=user_id
     )
 
     db.add(new_expense)
@@ -21,31 +28,50 @@ def create_expense(db: Session, user, expense):
     return new_expense
 
 
-# =========================
-# GET EXPENSES
-# =========================
+def get_total_spending(db: Session, user_id: int):
+    """
+    Celková suma výdavkov používateľa.
+    """
 
-def get_user_expenses(db: Session, user):
-    return db.query(models.Expense).filter(
-        models.Expense.user_id == user.id
+    expenses = db.query(models.Expense).filter_by(
+        user_id=user_id
+    ).all()
+
+    return sum(e.amount for e in expenses)
+
+
+def get_category_stats(db: Session, user_id: int):
+    """
+    Súčet výdavkov podľa kategórií.
+    """
+
+    expenses = db.query(models.Expense).filter_by(
+        user_id=user_id
+    ).all()
+
+    stats = {}
+
+    for expense in expenses:
+        if expense.category not in stats:
+            stats[expense.category] = 0
+
+        stats[expense.category] += expense.amount
+
+    return stats
+
+
+def get_top_expenses(db: Session, user_id: int, limit: int = 5):
+    """
+    Najväčšie výdavky používateľa.
+    """
+
+    expenses = db.query(models.Expense).filter_by(
+        user_id=user_id
+    ).all()
+
+    expenses.sort(
+        key=lambda x: x.amount,
+        reverse=True
     )
 
-
-# =========================
-# TOTAL
-# =========================
-
-def get_total(db: Session, user):
-    return db.query(models.Expense).filter(
-        models.Expense.user_id == user.id
-    )
-
-
-# =========================
-# TOP EXPENSE
-# =========================
-
-def get_top(db: Session, user):
-    return db.query(models.Expense).filter(
-        models.Expense.user_id == user.id
-    ).order_by(models.Expense.amount.desc()).first()
+    return expenses[:limit]
