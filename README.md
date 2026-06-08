@@ -1,10 +1,15 @@
-# 💰 Expense Tracker API
+Live Demo
+
+API Documentation:
+https://jwt-auth-api-2-6oo7.onrender.com/docs
+
+#  Expense Tracker API
 
 Production-ready backend API built with FastAPI, JWT authentication, SQLAlchemy, and Alembic migrations.
 
-## 🚀 Features
+## Features
 
-### Authentication
+## Authentication
 
 * JWT Access Tokens
 * Refresh Tokens
@@ -12,19 +17,19 @@ Production-ready backend API built with FastAPI, JWT authentication, SQLAlchemy,
 * Password Hashing (bcrypt)
 * Protected Routes
 
-### Expense Management
+## Expense Management
 
 * Create Expenses
 * List User Expenses
 * User Data Isolation
 * Category Tracking
 
-### Analytics
+## Analytics
 
 * Total Spending Statistics
 * Spending by Category
 
-### Architecture
+## Architecture
 
 * FastAPI
 * SQLAlchemy ORM
@@ -32,7 +37,7 @@ Production-ready backend API built with FastAPI, JWT authentication, SQLAlchemy,
 * Service Layer Pattern
 * Modular Project Structure
 
-## 🛠 Tech Stack
+## Tech Stack
 
 * Python
 * FastAPI
@@ -44,7 +49,7 @@ Production-ready backend API built with FastAPI, JWT authentication, SQLAlchemy,
 * Passlib (bcrypt)
 * Docker
 
-## 📂 Project Structure
+## Project Structure
 
 ```text
 auth/
@@ -59,9 +64,9 @@ models.py
 schemas.py
 ```
 
-## 📦 API Endpoints
+## API Endpoints
 
-### Authentication
+## Authentication
 
 | Method | Endpoint |
 | ------ | -------- |
@@ -84,7 +89,7 @@ schemas.py
 | GET    | /stats/total    |
 | GET    | /stats/category |
 
-## ⚙️ Run Locally
+## Run Locally
 
 Install dependencies:
 
@@ -104,13 +109,13 @@ Open Swagger documentation:
 http://127.0.0.1:8000/docs
 ```
 
-## 🧪 Testing
+## Testing
 
 ```bash
 pytest
 ```
 
-## 🐳 Docker
+## Docker
 
 Build:
 
@@ -124,7 +129,7 @@ Run:
 docker run -p 10000:10000 expense-api
 ```
 
-## 📈 Future Improvements
+## Future Improvements
 
 * User Roles (Admin/User)
 * Email Verification
@@ -132,6 +137,7 @@ docker run -p 10000:10000 expense-api
 * CI/CD Pipeline
 * Automated Test Suite
 
-## 👨‍💻 Author
+## Author
 
 Personal backend portfolio project showcasing FastAPI architecture, authentication, and REST API design.
+
