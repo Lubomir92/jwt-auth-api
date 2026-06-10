@@ -6,24 +6,27 @@ from datetime import datetime, timedelta
 
 import models
 from database import get_db
-from passlib.context import CryptContext
+import bcrypt
 from core.config import SECRET_KEY, ALGORITHM
 
 router = APIRouter()
 
+# ---------------- CONFIG ----------------
 ACCESS_EXPIRE_MINUTES = 15
 REFRESH_EXPIRE_DAYS = 7
 
-pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer = HTTPBearer()
 
 
 # ---------------- PASSWORD ----------------
-def verify_password(p, h):
-    return pwd.verify(p, h)
+def hash_password(password: str):
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 
-# ---------------- TOKENS ----------------
+def verify_password(plain: str, hashed: str):
+    return bcrypt.checkpw(plain.encode('utf-8'), hashed.encode('utf-8'))
+
+# ---------------- JWT ----------------
 def create_access_token(data: dict):
     payload = data.copy()
     payload.update({
@@ -31,7 +34,6 @@ def create_access_token(data: dict):
         "type": "access"
     })
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
-
 
 def create_refresh_token(data: dict):
     payload = data.copy()
@@ -41,58 +43,84 @@ def create_refresh_token(data: dict):
     })
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
+# ---------------- REGISTER ----------------
+@router.post("/register")
+def register(
+    email: str = Body(...),
+    password: str = Body(...),
+    db: Session = Depends(get_db)
+):
+    # CHECK USER
+    user = db.query(models.User).filter(models.User.email == email).first()
+
+    if user:
+        raise HTTPException(status_code=400, detail="User already exists")
+
+    # CREATE USER
+    new_user = models.User(
+        email=email,
+        password=hash_password(password)
+    )
+
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    return {"message": "User created"}
 
 # ---------------- LOGIN ----------------
 @router.post("/login")
-def login(form: OAuth2PasswordRequestForm = Depends(),
-          db: Session = Depends(get_db)):
+def login(
+    form: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db)
+):
 
-    user = db.query(models.User).filter_by(email=form.username).first()
+    user = db.query(models.User).filter(models.User.email == form.username).first()
 
     if not user or not verify_password(form.password, user.password):
-        raise HTTPException(401, "Invalid credentials")
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    access = create_access_token({"sub": user.email})
-    refresh = create_refresh_token({"sub": user.email})
+    access_token = create_access_token({"sub": user.email})
+    refresh_token = create_refresh_token({"sub": user.email})
 
-    db.add(models.RefreshToken(token=refresh, user_id=user.id))
+    db.add(models.RefreshToken(token=refresh_token, user_id=user.id))
     db.commit()
 
     return {
-        "access_token": access,
-        "refresh_token": refresh,
+        "access_token": access_token,
+        "refresh_token": refresh_token,
         "token_type": "bearer"
     }
 
-
-# ---------------- AUTH ----------------
+# ---------------- CURRENT USER ----------------
 def get_current_user(token=Depends(bearer)):
     try:
         payload = jwt.decode(token.credentials, SECRET_KEY, algorithms=[ALGORITHM])
 
         if payload.get("type") != "access":
-            raise HTTPException(401, "Invalid token")
+            raise HTTPException(status_code=401, detail="Invalid token")
 
         return payload["sub"]
 
     except JWTError:
-        raise HTTPException(401, "Invalid token")
+        raise HTTPException(status_code=401, detail="Invalid token")
 
-
+# ---------------- ME ----------------
 @router.get("/me")
 def me(user=Depends(get_current_user)):
     return {"email": user}
 
-
 # ---------------- REFRESH ----------------
 @router.post("/refresh")
-def refresh(refresh_token: str = Body(...),
-            db: Session = Depends(get_db)):
+def refresh(
+    refresh_token: str = Body(...),
+    db: Session = Depends(get_db)
+):
 
-    stored = db.query(models.RefreshToken).filter_by(token=refresh_token).first()
+    stored = db.query(models.RefreshToken).filter(models.RefreshToken.token == refresh_token).first()
 
     if not stored:
-        raise HTTPException(401, "Invalid refresh token")
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
 
     payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
 
@@ -100,13 +128,14 @@ def refresh(refresh_token: str = Body(...),
 
     return {"access_token": new_access}
 
-
 # ---------------- LOGOUT ----------------
 @router.post("/logout")
-def logout(refresh_token: str = Body(...),
-           db: Session = Depends(get_db)):
+def logout(
+    refresh_token: str = Body(...),
+    db: Session = Depends(get_db)
+):
 
-    token = db.query(models.RefreshToken).filter_by(token=refresh_token).first()
+    token = db.query(models.RefreshToken).filter(models.RefreshToken.token == refresh_token).first()
 
     if token:
         db.delete(token)

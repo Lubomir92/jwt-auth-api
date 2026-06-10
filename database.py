@@ -1,20 +1,31 @@
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
-from core.config import DATABASE_URL
 
+#  POSTGRES URL z Renderu (alebo .env)
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+# fallback pre lokál (ak chceš ešte dev)
 if not DATABASE_URL:
-    raise Exception("DATABASE_URL is missing")
+    DATABASE_URL = "sqlite:///./app.db"
+
+# SQLite needs special args
+connect_args = {}
+if DATABASE_URL.startswith("sqlite"):
+    connect_args = {"check_same_thread": False}
 
 engine = create_engine(
     DATABASE_URL,
-    pool_pre_ping=True,
-    connect_args={}  # dôležité pre PostgreSQL kompatibilitu
+    connect_args=connect_args
 )
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine
+)
 
 Base = declarative_base()
-
 
 def get_db():
     db = SessionLocal()
