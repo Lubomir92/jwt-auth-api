@@ -15,9 +15,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
-        "http://localhost:3000",
-        "https://jwt-auth-api-2-6oo7.onrender.com",
-        "https://YOUR-FRONTEND.onrender.com"
+        "https://your-frontend-url.onrender.com",
+        "https://jwt-auth-api-2-6oo7.onrender.com"
     ],
     allow_credentials=True,
     allow_methods=["*"],

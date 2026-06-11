@@ -40,6 +40,35 @@ def get(
 
     return get_user_expenses(db, db_user.id)
 
+# ---------------- UPDATE EXPENSE ----------------
+@router.put("/expenses/{expense_id}")
+def update_expense(
+    expense_id: int,
+    expense_data: schemas.ExpenseCreate,
+    user=Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    db_user = db.query(models.User).filter(
+        models.User.email == user
+    ).first()
+
+    expense = db.query(models.Expense).filter(
+        models.Expense.id == expense_id,
+        models.Expense.user_id == db_user.id
+    ).first()
+
+    if not expense:
+        return {"error": "Expense not found"}
+
+    expense.title = expense_data.title
+    expense.amount = expense_data.amount
+    expense.category = expense_data.category
+
+    db.commit()
+    db.refresh(expense)
+
+    return expense
+
 
 # ---------------- CATEGORY STATS ----------------
 @router.get("/stats/category")
@@ -87,3 +116,27 @@ def top_expenses(
     db_user = db.query(models.User).filter(models.User.email == user).first()
 
     return get_top_expenses(db, db_user.id, limit)
+
+# ---------------- DELETE EXPENSE ----------------
+@router.delete("/expenses/{expense_id}")
+def delete_expense(
+    expense_id: int,
+    user=Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    db_user = db.query(models.User).filter(
+        models.User.email == user
+    ).first()
+
+    expense = db.query(models.Expense).filter(
+        models.Expense.id == expense_id,
+        models.Expense.user_id == db_user.id
+    ).first()
+
+    if not expense:
+        return {"error": "Expense not found"}
+
+    db.delete(expense)
+    db.commit()
+
+    return {"message": "Deleted"}
