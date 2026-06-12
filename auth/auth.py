@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from jose import jwt, JWTError
 from datetime import datetime, timedelta
 from pydantic import BaseModel
+from fastapi.security import HTTPBearer
 
 import models
 from database import get_db
@@ -14,6 +15,9 @@ router = APIRouter()
 # ---------------- CONFIG ----------------
 ACCESS_EXPIRE_MINUTES = 15
 REFRESH_EXPIRE_DAYS = 7
+
+# FIX: create one instance (important for stability)
+bearer = HTTPBearer()
 
 
 # ---------------- PASSWORD ----------------
@@ -50,7 +54,7 @@ def create_refresh_token(data: dict):
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
-# ---------------- Pydantic MODEL ----------------
+# ---------------- LOGIN MODEL ----------------
 class LoginRequest(BaseModel):
     email: str
     password: str
@@ -86,7 +90,7 @@ def register(
     return {"message": "User created"}
 
 
-# ---------------- LOGIN (FIXED) ----------------
+# ---------------- LOGIN ----------------
 @router.post("/login")
 def login(
     data: LoginRequest,
@@ -132,7 +136,7 @@ def login(
 
 
 # ---------------- CURRENT USER ----------------
-def get_current_user(token=Depends(HTTPBearer())):
+def get_current_user(token=Depends(bearer)):
     try:
         payload = jwt.decode(
             token.credentials,
