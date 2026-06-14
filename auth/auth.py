@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
-from jose import jwt, JWTError
+from jose import jwt, JWTError, ExpiredSignatureError
 from datetime import datetime, timedelta
 from pydantic import BaseModel
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -12,8 +12,7 @@ from core.config import SECRET_KEY, ALGORITHM
 
 router = APIRouter()
 
-# ---------------- CONFIG ----------------
-ACCESS_EXPIRE_MINUTES = 60  # 🔥 zvýšené (15 min je problém pri debugovaní)
+ACCESS_EXPIRE_MINUTES = 60 * 24  # 🔥 24 hodín (fix pre tvoj problém)
 REFRESH_EXPIRE_DAYS = 7
 
 bearer = HTTPBearer(auto_error=True)
@@ -53,42 +52,18 @@ def create_refresh_token(data: dict):
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
-# ---------------- LOGIN MODEL ----------------
+# ---------------- LOGIN ----------------
 class LoginRequest(BaseModel):
     email: str
     password: str
 
 
-# ---------------- REGISTER ----------------
-@router.post("/register")
-def register(
-    email: str = Body(...),
-    password: str = Body(...),
-    db: Session = Depends(get_db)
-):
-
-    user = db.query(models.User).filter(models.User.email == email).first()
-
-    if user:
-        raise HTTPException(status_code=400, detail="User already exists")
-
-    new_user = models.User(
-        email=email,
-        password=hash_password(password)
-    )
-
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-
-    return {"message": "User created"}
-
-
-# ---------------- LOGIN ----------------
 @router.post("/login")
 def login(data: LoginRequest, db: Session = Depends(get_db)):
 
-    user = db.query(models.User).filter(models.User.email == data.email).first()
+    user = db.query(models.User).filter(
+        models.User.email == data.email
+    ).first()
 
     if not user or not verify_password(data.password, user.password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -109,87 +84,24 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
     }
 
 
-# ---------------- FIXED AUTH ----------------
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer)
-):
+# ---------------- CURRENT USER (FIXED) ----------------
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer)):
+    token = credentials.credentials
+
     try:
-        token = credentials.credentials
-
-        print("========== AUTH DEBUG ==========")
-        print("TOKEN:", token)
-        print("SECRET_KEY:", SECRET_KEY)
-        print("ALGORITHM:", ALGORITHM)
-
         payload = jwt.decode(
             token,
             SECRET_KEY,
             algorithms=[ALGORITHM]
         )
 
-        print("PAYLOAD:", payload)
-
         if payload.get("type") != "access":
-            raise HTTPException(
-                status_code=401,
-                detail="Invalid token type"
-            )
+            raise HTTPException(status_code=401, detail="Invalid token type")
 
-        email = payload.get("sub")
+        return payload["sub"]
 
-        if not email:
-            raise HTTPException(
-                status_code=401,
-                detail="Missing subject"
-            )
+    except ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
 
-        return email
-
-    except JWTError as e:
-        print("JWT ERROR:", str(e))
-
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid token"
-        )
-
-
-# ---------------- ME ----------------
-@router.get("/me")
-def me(user=Depends(get_current_user)):
-    return {"email": user}
-
-
-# ---------------- REFRESH ----------------
-@router.post("/refresh")
-def refresh(refresh_token: str = Body(...), db: Session = Depends(get_db)):
-
-    stored = db.query(models.RefreshToken).filter(
-        models.RefreshToken.token == refresh_token
-    ).first()
-
-    if not stored:
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
-
-    payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
-
-    new_access = create_access_token({
-        "sub": payload["sub"]
-    })
-
-    return {"access_token": new_access}
-
-
-# ---------------- LOGOUT ----------------
-@router.post("/logout")
-def logout(refresh_token: str = Body(...), db: Session = Depends(get_db)):
-
-    token = db.query(models.RefreshToken).filter(
-        models.RefreshToken.token == refresh_token
-    ).first()
-
-    if token:
-        db.delete(token)
-        db.commit()
-
-    return {"message": "logged out"}
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
