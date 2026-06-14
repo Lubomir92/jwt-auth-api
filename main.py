@@ -11,12 +11,13 @@ from routers.expenses import router as expenses_router
 app = FastAPI(title="JWT Auth API")
 
 # ---------------- CORS ----------------
+from fastapi.middleware.cors import CORSMiddleware
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
-        "https://your-frontend-url.onrender.com",
-        "https://jwt-auth-api-2-6oo7.onrender.com"
+        "https://expense-tracker-frontend-five-xi.vercel.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
